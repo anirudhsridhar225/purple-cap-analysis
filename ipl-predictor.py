@@ -7,6 +7,7 @@ import pandas as pd
 import seaborn as sns
 
 import matplotlib
+from matplotlib.container import BarContainer
 
 # to directly save plots to the fs
 matplotlib.use("Agg")
@@ -36,10 +37,9 @@ sns.set_theme(style="whitegrid", context="talk")
 def _clean_object_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Strip whitespace and normalize common missing-value markers."""
     cleaned = df.copy()
-    for column in cleaned.select_dtypes(include=['object', 'string']).columns:
+    for column in cleaned.select_dtypes(include=["object", "string"]).columns:
         cleaned[column] = cleaned[column].astype("string").str.strip()
-        cleaned[column] = cleaned[column].replace(
-            {marker: pd.NA for marker in NA_VALUES})
+        cleaned[column] = cleaned[column].replace(NA_VALUES, pd.NA)
     return cleaned
 
 
@@ -68,8 +68,7 @@ def load_and_clean_deliveries(path: str) -> pd.DataFrame:
 
     for column in NUMERIC_DELIVERY_COLUMNS:
         if column in deliveries.columns:
-            deliveries[column] = pd.to_numeric(
-                deliveries[column], errors="coerce")
+            deliveries[column] = pd.to_numeric(deliveries[column], errors="coerce")
 
     for column in ["over", "ball", "inning", "match_id", "is_wicket"]:
         if column in deliveries.columns:
@@ -82,7 +81,9 @@ def load_and_clean_deliveries(path: str) -> pd.DataFrame:
     return deliveries
 
 
-def build_wicket_analysis(matches: pd.DataFrame, deliveries: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
+def build_wicket_analysis(
+    matches: pd.DataFrame, deliveries: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
     required_match_columns = {"id", "season", "date"}
     required_delivery_columns = {"match_id", "over", "is_wicket"}
 
@@ -109,7 +110,8 @@ def build_wicket_analysis(matches: pd.DataFrame, deliveries: pd.DataFrame) -> tu
     missing_season_rows = int(merged["season"].isna().sum())
     if missing_season_rows:
         raise ValueError(
-            f"{missing_season_rows} deliveries could not be mapped to a season.")
+            f"{missing_season_rows} deliveries could not be mapped to a season."
+        )
 
     wicket_events = merged.loc[merged["is_wicket"].eq(1)].copy()
     wicket_events["over_number"] = wicket_events["over"] + 1
@@ -133,8 +135,7 @@ def build_wicket_analysis(matches: pd.DataFrame, deliveries: pd.DataFrame) -> tu
         .tolist()
     )
     if len(season_order) == 0:
-        season_order = sorted(
-            wicket_events["season"].dropna().unique().tolist())
+        season_order = sorted(wicket_events["season"].dropna().unique().tolist())
 
     season_over = (
         wicket_events.groupby(["season", "over_number"], as_index=False)
@@ -142,16 +143,15 @@ def build_wicket_analysis(matches: pd.DataFrame, deliveries: pd.DataFrame) -> tu
         .rename(columns={"size": "wickets"})
     )
     season_matrix = (
-        season_over.pivot(
-            index="season", columns="over_number", values="wickets")
+        season_over.pivot(index="season", columns="over_number", values="wickets")
         .reindex(index=season_order, columns=over_axis)
         .fillna(0)
         .astype(int)
     )
 
     top_over = overall.loc[overall["wickets"].idxmax()]
-    top_over_number = int(top_over["over_number"])
-    top_over_wickets = int(top_over["wickets"])
+    top_over_number = top_over["over_number"].astype(int)
+    top_over_wickets = top_over["wickets"].astype(int)
     summary_lines = [
         f"Total matches loaded: {len(matches):,}",
         f"Total deliveries loaded: {len(deliveries):,}",
@@ -165,16 +165,16 @@ def build_wicket_analysis(matches: pd.DataFrame, deliveries: pd.DataFrame) -> tu
 
 def save_overall_plot(overall: pd.DataFrame, output_dir: Path) -> Path:
     fig, ax = plt.subplots(figsize=(14, 6))
-    sns.barplot(data=overall, x="over_number",
-                y="wickets", ax=ax, color="#5B8FF9")
+    sns.barplot(data=overall, x="over_number", y="wickets", ax=ax, color="#5B8FF9")
     ax.set_title("Wickets by Over Across the Full IPL Dataset")
     ax.set_xlabel("Over number")
     ax.set_ylabel("Wickets")
     ax.set_xticks(range(len(overall)))
-    ax.set_xticklabels(overall["over_number"].astype(int))
+    ax.set_xticklabels(overall["over_number"])
 
     for container in ax.containers:
-        ax.bar_label(container, fmt="%.0f", padding=2, fontsize=9)
+        if isinstance(container, BarContainer):
+            ax.bar_label(container, fmt="%.0f", padding=2, fontsize=9)
 
     fig.tight_layout()
     output_path = output_dir / "wickets_by_over_overall.png"
@@ -206,7 +206,9 @@ def save_season_heatmap(season_matrix: pd.DataFrame, output_dir: Path) -> Path:
     return output_path
 
 
-def run_sanity_checks(wicket_events: pd.DataFrame, overall: pd.DataFrame, season_matrix: pd.DataFrame) -> None:
+def run_sanity_checks(
+    wicket_events: pd.DataFrame, overall: pd.DataFrame, season_matrix: pd.DataFrame
+) -> None:
     total_wickets = int(wicket_events.shape[0])
     overall_total = int(overall["wickets"].sum())
     season_total = int(season_matrix.to_numpy().sum())
@@ -214,23 +216,25 @@ def run_sanity_checks(wicket_events: pd.DataFrame, overall: pd.DataFrame, season
 
     if overall_total != total_wickets:
         raise AssertionError(
-            "Overall wicket counts do not match the wicket events table.")
+            "Overall wicket counts do not match the wicket events table."
+        )
     if season_total != total_wickets:
         raise AssertionError(
-            "Season-wise wicket counts do not match the wicket events table.")
+            "Season-wise wicket counts do not match the wicket events table."
+        )
     if missing_seasons != 0:
-        raise AssertionError(
-            "Some wicket events are missing season information.")
+        raise AssertionError("Some wicket events are missing season information.")
 
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    matches = load_and_clean_matches('matches.csv')
-    deliveries = load_and_clean_deliveries('deliveries.csv')
+    matches = load_and_clean_matches("assets/matches.csv")
+    deliveries = load_and_clean_deliveries("assets/deliveries.csv")
 
     wicket_events, overall, season_matrix, summary_lines = build_wicket_analysis(
-        matches, deliveries)
+        matches, deliveries
+    )
     run_sanity_checks(wicket_events, overall, season_matrix)
 
     overall_path = save_overall_plot(overall, OUTPUT_DIR)
